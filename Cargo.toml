@@ -53,6 +53,7 @@ lazy_static = "1.5"
 utoipa = { version = "4.2.0", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "6.0.0", features = ["axum"] }
 http-body-util = "0.1.0"
+rand = "0.8.5"
 
 [build-dependencies]
 cc = "1.0"
@@ -87,6 +88,10 @@ path = "examples/api_client.rs"
 [[example]]
 name = "temporal_query"
 path = "examples/temporal_query.rs"
+
+[[example]]
+name = "hybrid_operations"
+path = "examples/hybrid_operations.rs"
 
 [build]
 rustflags = ["-C", "link-args=-std=c++17"] 

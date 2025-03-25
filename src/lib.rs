@@ -9,6 +9,7 @@ pub mod config;
 pub mod context;
 pub mod error;
 pub mod graph;
+pub mod hybrid;
 pub mod memory;
 pub mod mcp;
 pub mod rag;
@@ -27,6 +28,7 @@ pub use types::{Node, Edge, NodeId, EdgeId};
 pub use temporal::{DynamoDBTemporal as TemporalGraphStore, TemporalIndex, TemporalIndexEntry};
 pub use memory::{MemorySystem, MemoryEntry, Memory};
 pub use rag::{RAGSystem, RAGConfig, ExtractedEntity, DetectedRelationship};
+pub use hybrid::{HybridGraph, HybridStore, VectorizedNode, VectorizedEdge};
 
 /// Re-export common types
 pub use types::Properties;

@@ -61,6 +61,22 @@ cargo run --example temporal_query
 
 This example creates a product and customer entity, then updates them at different points in time to demonstrate how the graph captures the history and evolution of entities.
 
+### 4. Hybrid Vector+Graph Operations (`hybrid_operations.rs`)
+
+Demonstrates the hybrid architecture that combines graph traversal with vector similarity:
+- Creating nodes and edges with vector embeddings
+- Performing vector similarity searches
+- Executing hybrid queries that combine graph traversal and vector similarity
+- Using fusion strategies to combine results
+- Temporal queries with vector similarity
+
+**Run with:**
+```bash
+cargo run --example hybrid_operations
+```
+
+This example creates a small knowledge graph with vector embeddings attached to nodes and edges, then demonstrates how to perform vector similarity searches, hybrid queries, and temporal queries with vector similarity, showcasing the power of the hybrid approach.
+
 ## End-to-End Tests
 
 In addition to these examples, you can find end-to-end tests in the `tests/` directory:
@@ -103,6 +119,8 @@ Throughout these examples, you'll notice some common patterns:
 2. **Temporal Versioning**: Entities are updated with new valid times to create temporal versions
 3. **Graph Querying**: Various methods are used to traverse and query the graph
 4. **Error Handling**: Examples demonstrate proper error handling patterns
+5. **Vector Similarity**: Hybrid operations use vector embeddings for enhanced retrieval capabilities
+6. **Fusion Strategies**: Different strategies for combining graph and vector results are demonstrated
 
 ## Need Help?
 
