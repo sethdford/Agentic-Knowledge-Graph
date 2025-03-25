@@ -66,14 +66,20 @@ impl std::fmt::Display for EntityId {
 pub struct Timestamp(pub DateTime<Utc>);
 
 impl Timestamp {
-    /// Create a new timestamp from the current time
+    /// Create a new timestamp with the current time
     pub fn now() -> Self {
         Self(Utc::now())
     }
-
-    /// Create a new timestamp from a DateTime<Utc>
+    
+    /// Create a timestamp from a DateTime
     pub fn from_datetime(dt: DateTime<Utc>) -> Self {
         Self(dt)
+    }
+}
+
+impl Default for Timestamp {
+    fn default() -> Self {
+        Self(Utc::now())
     }
 }
 
@@ -153,7 +159,19 @@ pub enum EntityType {
     Topic,
     Document,
     Vertex,
+    Date,
+    Time,
+    Money,
+    Percentage,
+    Product,
+    Other,
     Custom(String),
+}
+
+impl Default for EntityType {
+    fn default() -> Self {
+        Self::Node
+    }
 }
 
 impl std::fmt::Display for EntityType {
@@ -168,6 +186,12 @@ impl std::fmt::Display for EntityType {
             EntityType::Topic => write!(f, "Topic"),
             EntityType::Document => write!(f, "Document"),
             EntityType::Vertex => write!(f, "Vertex"),
+            EntityType::Date => write!(f, "Date"),
+            EntityType::Time => write!(f, "Time"),
+            EntityType::Money => write!(f, "Money"),
+            EntityType::Percentage => write!(f, "Percentage"),
+            EntityType::Product => write!(f, "Product"),
+            EntityType::Other => write!(f, "Other"),
             EntityType::Custom(s) => write!(f, "{}", s),
         }
     }
@@ -177,17 +201,23 @@ impl std::str::FromStr for EntityType {
     type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "Node" => Ok(EntityType::Node),
-            "Edge" => Ok(EntityType::Edge),
-            "Person" => Ok(EntityType::Person),
-            "Organization" => Ok(EntityType::Organization),
-            "Location" => Ok(EntityType::Location),
-            "Event" => Ok(EntityType::Event),
-            "Topic" => Ok(EntityType::Topic),
-            "Document" => Ok(EntityType::Document),
-            "Vertex" => Ok(EntityType::Vertex),
-            _ => Ok(EntityType::Custom(s.to_string())),
+        match s.to_lowercase().as_str() {
+            "node" => Ok(EntityType::Node),
+            "edge" => Ok(EntityType::Edge),
+            "person" => Ok(EntityType::Person),
+            "organization" => Ok(EntityType::Organization),
+            "location" => Ok(EntityType::Location),
+            "event" => Ok(EntityType::Event),
+            "topic" => Ok(EntityType::Topic),
+            "document" => Ok(EntityType::Document),
+            "vertex" => Ok(EntityType::Vertex),
+            "date" => Ok(EntityType::Date),
+            "time" => Ok(EntityType::Time),
+            "money" => Ok(EntityType::Money),
+            "percentage" => Ok(EntityType::Percentage),
+            "product" => Ok(EntityType::Product),
+            "other" => Ok(EntityType::Other),
+            s => Ok(EntityType::Custom(s.to_string())),
         }
     }
 }
@@ -312,6 +342,35 @@ impl<T> TemporalQueryResult<T> {
             timestamp,
             version_id,
         }
+    }
+
+    /// Get a reference to the data
+    pub fn data(&self) -> &T {
+        &self.data
+    }
+
+    /// Get a reference to the timestamp
+    pub fn timestamp(&self) -> &Timestamp {
+        &self.timestamp
+    }
+
+    /// Get a reference to the version ID
+    pub fn version_id(&self) -> &Uuid {
+        &self.version_id
+    }
+}
+
+impl<T> std::ops::Deref for TemporalQueryResult<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T> AsRef<T> for TemporalQueryResult<T> {
+    fn as_ref(&self) -> &T {
+        &self.data
     }
 }
 
@@ -655,36 +714,6 @@ impl FromLocalResultSet for Option<Node> {
 impl FromLocalResultSet for () {
     fn from_local_result_set(_: LocalResultSet) -> Result<Self> {
         Ok(())
-    }
-}
-
-impl ToGValue for NodeId {
-    fn to_gvalue(&self) -> GValue {
-        GValue::String(self.0.to_string())
-    }
-}
-
-impl ToGValue for EdgeId {
-    fn to_gvalue(&self) -> GValue {
-        GValue::String(self.0.to_string())
-    }
-}
-
-impl ToGValue for EntityType {
-    fn to_gvalue(&self) -> GValue {
-        GValue::String(self.to_string())
-    }
-}
-
-impl ToGValue for Properties {
-    fn to_gvalue(&self) -> GValue {
-        GValue::String(serde_json::to_string(&self.0).unwrap())
-    }
-}
-
-impl ToGValue for TemporalRange {
-    fn to_gvalue(&self) -> GValue {
-        GValue::String(serde_json::to_string(&self).unwrap())
     }
 }
 

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
+use serde_json::Value;
 
 use crate::{
     error::{Error, Result},
@@ -8,72 +9,85 @@ use crate::{
 
 use super::TemporalOperation;
 
-/// Represents an optimized temporal query
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Optimized query for temporal data
+#[derive(Clone, Debug)]
 pub struct OptimizedQuery {
-    /// DynamoDB table name
-    pub table: String,
-    /// Primary key condition
-    pub key_condition: String,
+    /// Table name
+    pub table_name: String,
+    /// Key condition expression
+    pub key_condition: Option<String>,
     /// Filter expression
     pub filter_expression: Option<String>,
-    /// Expression attribute values
-    pub expression_values: serde_json::Value,
-    /// Index to use
-    pub index_name: Option<String>,
-    /// Limit results
-    pub limit: Option<u32>,
-    /// Scan direction
-    pub scan_forward: bool,
+    /// Expression values
+    pub expression_values: Option<Value>,
+    /// Scan direction (true for ascending, false for descending)
+    pub scan_direction: Option<bool>,
+    /// Limit
+    pub limit: Option<i32>,
 }
 
 impl OptimizedQuery {
     /// Create a new optimized query
-    pub fn new(table: String) -> Self {
+    pub fn new(table_name: String) -> Self {
         Self {
-            table,
-            key_condition: String::new(),
+            table_name,
+            key_condition: None,
             filter_expression: None,
-            expression_values: serde_json::json!({}),
-            index_name: None,
+            expression_values: None,
+            scan_direction: None,
             limit: None,
-            scan_forward: true,
         }
     }
 
-    /// Add a key condition
+    /// Set key condition
     pub fn with_key_condition(mut self, condition: String) -> Self {
-        self.key_condition = condition;
+        self.key_condition = Some(condition);
         self
     }
 
-    /// Add a filter expression
+    /// Set filter expression
     pub fn with_filter(mut self, filter: String) -> Self {
         self.filter_expression = Some(filter);
         self
     }
 
-    /// Add expression values
-    pub fn with_values(mut self, values: serde_json::Value) -> Self {
-        self.expression_values = values;
-        self
-    }
-
-    /// Use a specific index
-    pub fn with_index(mut self, index: String) -> Self {
-        self.index_name = Some(index);
-        self
-    }
-
-    /// Set result limit
-    pub fn with_limit(mut self, limit: u32) -> Self {
-        self.limit = Some(limit);
+    /// Set expression values
+    pub fn with_values(mut self, values: Value) -> Self {
+        self.expression_values = Some(values);
         self
     }
 
     /// Set scan direction
-    pub fn with_scan_direction(mut self, forward: bool) -> Self {
-        self.scan_forward = forward;
+    pub fn with_scan_direction(mut self, ascending: bool) -> Self {
+        self.scan_direction = Some(ascending);
+        self
+    }
+
+    /// Set limit
+    pub fn with_limit(mut self, limit: i32) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Set sort key condition
+    pub fn with_sort_key_condition(mut self, condition: String) -> Self {
+        // Sort key condition is part of the key condition
+        if let Some(existing) = self.key_condition {
+            self.key_condition = Some(format!("{} AND {}", existing, condition));
+        } else {
+            self.key_condition = Some(condition);
+        }
+        self
+    }
+
+    /// Set exclusive start key
+    pub fn with_exclusive_start_key(mut self, token: String) -> Self {
+        // Store the token in expression values
+        let mut values = self.expression_values.unwrap_or(serde_json::json!({}));
+        if let serde_json::Value::Object(ref mut map) = values {
+            map.insert(":exclusive_start_key".to_string(), serde_json::Value::String(token));
+        }
+        self.expression_values = Some(values);
         self
     }
 }
@@ -92,7 +106,7 @@ pub fn optimize_temporal_query(
                 .with_values(serde_json::json!({
                     ":ts": timestamp.timestamp()
                 }))
-                .with_index("valid_time_index".to_string());
+                .with_scan_direction(true);
         }
         TemporalOperation::Between(start, end) => {
             if start > end {
@@ -109,7 +123,7 @@ pub fn optimize_temporal_query(
                     ":start": start.timestamp(),
                     ":end": end.timestamp()
                 }))
-                .with_index("valid_time_index".to_string());
+                .with_scan_direction(true);
         }
         TemporalOperation::Evolution(range) => {
             if let (Some(start), Some(end)) = (range.start, range.end) {
@@ -127,15 +141,12 @@ pub fn optimize_temporal_query(
                         ":start": start.0.timestamp(),
                         ":end": end.0.timestamp()
                     }))
-                    .with_index("valid_time_index".to_string())
                     .with_scan_direction(true);
             }
         }
         TemporalOperation::Latest => {
             query = query
                 .with_key_condition("transaction_time_end IS NULL".to_string())
-                .with_index("transaction_time_index".to_string())
-                .with_limit(1)
                 .with_scan_direction(false);
         }
     }
@@ -154,9 +165,11 @@ mod tests {
         let operation = TemporalOperation::At(now);
         let query = optimize_temporal_query(&operation, "test_table".to_string()).unwrap();
 
-        assert!(query.key_condition.contains("valid_time_start"));
-        assert!(query.key_condition.contains("valid_time_end"));
-        assert_eq!(query.index_name, Some("valid_time_index".to_string()));
+        assert!(query.key_condition.is_some());
+        assert!(query.key_condition.as_ref().unwrap().contains("valid_time_start"));
+        assert!(query.key_condition.as_ref().unwrap().contains("valid_time_end"));
+        assert!(query.scan_direction.is_some());
+        assert!(query.scan_direction.unwrap());
     }
 
     #[test]
@@ -166,9 +179,11 @@ mod tests {
         let operation = TemporalOperation::Between(start, end);
         let query = optimize_temporal_query(&operation, "test_table".to_string()).unwrap();
 
-        assert!(query.key_condition.contains("valid_time_start"));
-        assert!(query.key_condition.contains("valid_time_end"));
-        assert_eq!(query.index_name, Some("valid_time_index".to_string()));
+        assert!(query.key_condition.is_some());
+        assert!(query.key_condition.as_ref().unwrap().contains("valid_time_start"));
+        assert!(query.key_condition.as_ref().unwrap().contains("valid_time_end"));
+        assert!(query.scan_direction.is_some());
+        assert!(query.scan_direction.unwrap());
     }
 
     #[test]
@@ -181,9 +196,10 @@ mod tests {
         let operation = TemporalOperation::Evolution(range);
         let query = optimize_temporal_query(&operation, "test_table".to_string()).unwrap();
 
-        assert!(query.key_condition.contains("valid_time_start"));
-        assert_eq!(query.index_name, Some("valid_time_index".to_string()));
-        assert!(query.scan_forward);
+        assert!(query.key_condition.is_some());
+        assert!(query.key_condition.as_ref().unwrap().contains("valid_time_start"));
+        assert!(query.scan_direction.is_some());
+        assert!(query.scan_direction.unwrap());
     }
 
     #[test]
@@ -191,10 +207,10 @@ mod tests {
         let operation = TemporalOperation::Latest;
         let query = optimize_temporal_query(&operation, "test_table".to_string()).unwrap();
 
-        assert!(query.key_condition.contains("transaction_time_end"));
-        assert_eq!(query.index_name, Some("transaction_time_index".to_string()));
-        assert_eq!(query.limit, Some(1));
-        assert!(!query.scan_forward);
+        assert!(query.key_condition.is_some());
+        assert!(query.key_condition.as_ref().unwrap().contains("transaction_time_end"));
+        assert!(query.scan_direction.is_some());
+        assert!(!query.scan_direction.unwrap());
     }
 
     #[test]

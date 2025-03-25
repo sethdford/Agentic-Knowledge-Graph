@@ -345,7 +345,13 @@ mod tests {
             .await
             .unwrap();
             
-        let result = index.get_latest(&entity_id).await.unwrap();
-        assert!(result.unwrap().transaction_time_end.is_some());
+        // Check that the entry exists and transaction_time_end is set
+        let entries = index.entries.read().await;
+        let entry = entries.get(&entity_id)
+            .and_then(|entries| entries.iter().find(|e| e.version_id == version_id))
+            .unwrap();
+        
+        assert!(entry.transaction_time_end.is_some());
+        assert_eq!(entry.transaction_time_end.unwrap(), now + Duration::hours(2));
     }
 } 

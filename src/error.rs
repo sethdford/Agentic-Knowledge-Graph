@@ -120,8 +120,32 @@ pub enum Error {
     #[error("Invalid entity type: {0}")]
     InvalidEntityType(String),
 
+    #[error("Invalid data type: {0}")]
+    InvalidDataType(String),
+
     #[error("Other error: {0}")]
     Other(String),
+
+    #[error("Model error: {0}")]
+    ModelError(String),
+    
+    #[error("Internal error: {0}")]
+    Internal(String),
+
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Invalid query format: {0}")]
+    InvalidQueryFormat(String),
+
+    #[error("Deserialization error: {0}")]
+    Deserialization(String),
+
+    #[error("Connection error: {0}")]
+    Connection(String),
+
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
 }
 
 /// Result type alias using our custom Error

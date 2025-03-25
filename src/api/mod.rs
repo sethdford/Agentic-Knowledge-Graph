@@ -33,6 +33,15 @@ use crate::{
     aws::dynamodb::DynamoDBClient,
 };
 
+mod models;
+pub mod state;
+mod error;
+mod handlers;
+
+pub use models::*;
+pub use state::ApiState;
+pub use error::{ApiError, ApiResult};
+
 /// Request to store information in the graph
 #[derive(Debug, Clone, Deserialize)]
 pub struct StoreRequest {
@@ -73,44 +82,13 @@ pub struct QueryResult {
     pub timestamp: DateTime<Utc>,
 }
 
-/// API state
-pub struct ApiState {
-    /// Application context
-    pub context: Arc<Context>,
-    /// Graph store
-    pub graph: Arc<NeptuneGraph>,
-    /// Memory store
-    pub memory: Arc<MemorySystem>,
-    /// RAG system
-    pub rag: Arc<RAGSystem>,
-    /// Temporal store for nodes
-    pub temporal: Arc<DynamoDBTemporal<Node, DynamoClient>>,
-    /// Temporal store for edges
-    pub edge_temporal: Arc<DynamoDBTemporal<Edge, DynamoClient>>,
-}
-
 /// Create a new API router
-pub fn new_router(
-    context: Arc<Context>,
-    graph: Arc<NeptuneGraph>,
-    memory: Arc<MemorySystem>,
-    rag: Arc<RAGSystem>,
-    temporal: Arc<DynamoDBTemporal<Node, DynamoClient>>,
-    edge_temporal: Arc<DynamoDBTemporal<Edge, DynamoClient>>,
-) -> Router {
-    let state = Arc::new(ApiState {
-        context,
-        graph,
-        memory,
-        rag,
-        temporal,
-        edge_temporal,
-    });
-
+pub fn create_router(state: Arc<ApiState>) -> Router {
     Router::new()
-        .route("/store", post(store_information))
-        .route("/query", post(query_knowledge))
-        .route("/node/:id", get(get_node))
+        // Health and version endpoints
+        .route("/health", axum::routing::get(handlers::health_check))
+        .route("/version", axum::routing::get(handlers::version))
+        // Add state and middleware
         .with_state(state)
         .layer(TraceLayer::new_for_http())
 }
@@ -120,7 +98,7 @@ async fn store_information(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<StoreRequest>,
 ) -> impl IntoResponse {
-    match state.rag.update_graph(&request.content, Utc::now()).await {
+    match state.rag.process_text(&request.content).await {
         Ok(_) => StatusCode::OK,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
@@ -215,68 +193,8 @@ async fn get_node(
 
 impl ApiState {
     pub async fn new(config: Config) -> Result<Self> {
-        // Initialize AWS config
-        let aws_config = aws_config::from_env()
-            .region(aws_sdk_dynamodb::config::Region::new(config.aws_region.clone()))
-            .load()
-            .await;
-
-        // Create AWS clients
-        let dynamo_client = Arc::new(DynamoClient::new(&aws_config));
-        let neptune_client = Arc::new(NeptuneClient::new(&aws_config));
-
-        // Initialize context
-        let context = Arc::new(Context::new(config.clone()));
-
-        // Initialize graph store
-        let graph = Arc::new(NeptuneGraph::new(&config).await?);
-
-        // Initialize OpenSearch client for memory store
-        let url = Url::parse(&config.memory_url)?;
-        let pool = SingleNodeConnectionPool::new(url);
-        let transport = TransportBuilder::new(pool)
-            .auth(Credentials::Basic(
-                config.memory_username.clone(),
-                config.memory_password.clone(),
-            ))
-            .build()
-            .map_err(|e| Error::OpenSearch(e.to_string()))?;
-        let opensearch_client = Arc::new(OpenSearch::new(transport));
-
-        // Initialize memory store
-        let memory = Arc::new(MemorySystem::new(
-            opensearch_client,
-            "memories".to_string(),
-            384, // Standard embedding dimension
-        ).await?);
-
-        // Initialize temporal stores
-        let temporal = Arc::new(DynamoDBTemporal::<Node, _>::new(
-            dynamo_client.clone(),
-            config.temporal_table.clone(),
-        ));
-
-        let edge_temporal = Arc::new(DynamoDBTemporal::<Edge, _>::new(
-            dynamo_client.clone(),
-            config.temporal_table.clone(),
-        ));
-
-        // Initialize RAG system
-        let rag = Arc::new(RAGSystem::new(
-            RAGConfig::default(),
-            memory.clone(),
-            temporal.clone(),
-            edge_temporal.clone(),
-        ));
-
-        Ok(Self {
-            context,
-            graph,
-            memory,
-            rag,
-            temporal,
-            edge_temporal,
-        })
+        // Use the existing initialize method instead
+        Self::initialize(&config).await
     }
 }
 

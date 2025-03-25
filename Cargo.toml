@@ -38,13 +38,21 @@ lru = "0.12"
 pin-project = "1.1"
 axum = "0.7.4"
 tower-http = { version = "0.5.1", features = ["trace"] }
+rust-bert = "0.22"
+tokenizers = "0.15"
+tch = { version = "0.14.0", features = ["download-libtorch"] }
+torch-sys = { version = "0.14.0", features = ["download-libtorch"] }
+rayon = "1.8"
+regex = "1.10"
+erased-serde = "0.4.6"
+lazy_static = "1.5"
 
 [build-dependencies]
 cc = "1.0"
 
 [dev-dependencies]
 tokio-test = "0.4"
-mockall = "0.12"
+mockall = "0.11"
 test-log = "0.2"
 pretty_assertions = "1.4"
 criterion = { version = "0.5", features = ["async"] }

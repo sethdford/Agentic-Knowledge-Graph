@@ -16,11 +16,20 @@ use crate::{
 mod handlers;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MCPRequest {
-    request_id: String,
-    command: String,
-    data: serde_json::Value,
-    cursor_position: Option<CursorPosition>,
+pub enum MCPRequest {
+    Navigate {
+        entity_id: String,
+        direction: String,
+    },
+    EntityDetail {
+        entity_id: String,
+    },
+    Command {
+        request_id: String,
+        command: String,
+        data: serde_json::Value,
+        cursor_position: Option<CursorPosition>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
