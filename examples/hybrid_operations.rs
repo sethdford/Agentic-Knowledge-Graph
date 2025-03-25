@@ -6,302 +6,176 @@
 use chrono::{DateTime, Utc};
 use graph::{
     Config, 
+    error::Result,
     graph::{Graph, Node, Edge, NodeId, EdgeId, TemporalRange},
-    hybrid::{
-        HybridGraph, 
-        VectorizedNode, 
-        VectorizedEdge,
-        query::{HybridQueryBuilder, SimilarityMetric},
-        fusion::{WeightedFusion, RankFusion},
-    },
-    memory::{Memory, MemoryEntry},
-    temporal::TemporalIndex,
+    graph::neptune::NeptuneGraph,
+    memory::{MemoryEntry, MemorySystem, OpenSearchMemory},
     types::{EntityType, Properties, Timestamp},
 };
 use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
+use std::sync::Arc;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     // Initialize configuration and services
-    println!("Initializing hybrid graph system...");
+    println!("Initializing services for hybrid operation example...");
     
     // Load configuration
     let config = Config::default();
     
-    // Initialize underlying services
+    // Initialize graph database - using concrete NeptuneGraph type
     let graph = graph::graph::new_graph(&config).await?;
-    let memory = graph::memory::MemorySystem::new(
-        graph::memory::OpenSearchMemory::new(&config).await?
-    ).await?;
-    let temporal_index = graph::temporal::DynamoDBTemporal::new(&config).await?;
     
-    // Create hybrid graph
-    let hybrid_graph = graph::hybrid::new_hybrid_graph(
-        &config,
-        graph,
-        memory,
-        temporal_index,
+    // Initialize vector store (OpenSearch)
+    let opensearch_memory = OpenSearchMemory::new(&config).await?;
+    let memory = MemorySystem::new(
+        Arc::new(opensearch_memory),
+        "example_memory".to_string(),
+        768 // embedding dimension
     ).await?;
     
-    // Create sample nodes with vector embeddings
-    println!("Creating sample nodes...");
+    // Create some example data
+    println!("Creating example data...");
     
-    // Create a person node
-    let person_node = create_person_node("Alice", 30, "Software Engineer")?;
-    let vectorized_person = VectorizedNode::new(
-        person_node,
-        Some(vec![0.1, 0.2, 0.3, 0.4, 0.5]),
-    );
-    let person_id = hybrid_graph.create_node(vectorized_person).await?;
-    println!("Created person node with ID: {}", person_id.0);
+    // Create nodes in graph database
+    let node1_id = graph.create_node(Node {
+        id: NodeId(Uuid::new_v4()),
+        label: "Product".to_string(),
+        entity_type: EntityType::new("Product"),
+        properties: Properties::from_json(json!({
+            "name": "Smartphone XYZ",
+            "price": 799.99,
+            "released": "2023-06-15"
+        })),
+        valid_time: TemporalRange::new(
+            Some(Timestamp(Utc::now())),
+            None,
+        ),
+        transaction_time: TemporalRange::new(
+            Some(Timestamp(Utc::now())),
+            None,
+        ),
+    }).await?;
     
-    // Create a company node
-    let company_node = create_company_node("TechCorp", "Technology", "San Francisco")?;
-    let vectorized_company = VectorizedNode::new(
-        company_node,
-        Some(vec![0.2, 0.3, 0.4, 0.5, 0.6]),
-    );
-    let company_id = hybrid_graph.create_node(vectorized_company).await?;
-    println!("Created company node with ID: {}", company_id.0);
+    let node2_id = graph.create_node(Node {
+        id: NodeId(Uuid::new_v4()),
+        label: "Category".to_string(),
+        entity_type: EntityType::new("Category"),
+        properties: Properties::from_json(json!({
+            "name": "Electronics",
+            "description": "Electronic devices and gadgets"
+        })),
+        valid_time: TemporalRange::new(
+            Some(Timestamp(Utc::now())),
+            None,
+        ),
+        transaction_time: TemporalRange::new(
+            Some(Timestamp(Utc::now())),
+            None,
+        ),
+    }).await?;
     
-    // Create a product node
-    let product_node = create_product_node("AI Assistant", "Software", 299.99)?;
-    let vectorized_product = VectorizedNode::new(
-        product_node,
-        Some(vec![0.5, 0.6, 0.7, 0.8, 0.9]),
-    );
-    let product_id = hybrid_graph.create_node(vectorized_product).await?;
-    println!("Created product node with ID: {}", product_id.0);
+    // Create an edge between nodes
+    let edge_id = graph.create_edge(Edge {
+        id: EdgeId(Uuid::new_v4()),
+        label: "BELONGS_TO".to_string(),
+        source_id: node1_id,
+        target_id: node2_id,
+        properties: Properties::from_json(json!({
+            "since": "2023-06-15"
+        })),
+        valid_time: TemporalRange::new(
+            Some(Timestamp(Utc::now())),
+            None,
+        ),
+        transaction_time: TemporalRange::new(
+            Some(Timestamp(Utc::now())),
+            None,
+        ),
+    }).await?;
     
-    // Create edges between nodes
-    println!("Creating relationships between nodes...");
+    // Store the same data in vector database with embeddings
+    // In a real implementation, these would be actual embeddings from a model
+    let embedding1 = vec![0.1f32; 768]; // Dummy embedding
+    let mut metadata1 = HashMap::new();
+    metadata1.insert("metadata".to_string(), json!({
+        "id": node1_id.0.to_string(),
+        "type": "node",
+        "entity_type": "Product",
+        "label": "Product"
+    }));
     
-    // Person works at company
-    let works_at_edge = create_edge(
-        person_id,
-        company_id,
-        "WORKS_AT",
-        json!({"start_date": "2020-01-15", "position": "Senior Engineer"}),
-    )?;
-    let vectorized_works_at = VectorizedEdge::new(
-        works_at_edge,
-        Some(vec![0.3, 0.4, 0.5, 0.6, 0.7]),
-    );
-    let works_at_id = hybrid_graph.create_edge(vectorized_works_at).await?;
-    println!("Created WORKS_AT relationship with ID: {}", works_at_id.0);
+    memory.store(MemoryEntry {
+        id: node1_id.0.to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content: "Smartphone XYZ is a high-end mobile device with advanced features released in 2023.".to_string(),
+        metadata: metadata1,
+        embedding: Some(embedding1),
+        node_type: Some(EntityType::new("Product")),
+    }).await?;
     
-    // Company produces product
-    let produces_edge = create_edge(
-        company_id,
-        product_id,
-        "PRODUCES",
-        json!({"release_date": "2022-06-30", "version": "1.0"}),
-    )?;
-    let vectorized_produces = VectorizedEdge::new(
-        produces_edge,
-        Some(vec![0.4, 0.5, 0.6, 0.7, 0.8]),
-    );
-    let produces_id = hybrid_graph.create_edge(vectorized_produces).await?;
-    println!("Created PRODUCES relationship with ID: {}", produces_id.0);
+    let embedding2 = vec![0.2f32; 768]; // Dummy embedding
+    let mut metadata2 = HashMap::new();
+    metadata2.insert("metadata".to_string(), json!({
+        "id": node2_id.0.to_string(),
+        "type": "node",
+        "entity_type": "Category",
+        "label": "Category"
+    }));
     
-    // Person develops product
-    let develops_edge = create_edge(
-        person_id,
-        product_id,
-        "DEVELOPS",
-        json!({"role": "Lead Developer", "contribution": "Architecture"}),
-    )?;
-    let vectorized_develops = VectorizedEdge::new(
-        develops_edge,
-        Some(vec![0.6, 0.7, 0.8, 0.9, 1.0]),
-    );
-    let develops_id = hybrid_graph.create_edge(vectorized_develops).await?;
-    println!("Created DEVELOPS relationship with ID: {}", develops_id.0);
+    memory.store(MemoryEntry {
+        id: node2_id.0.to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content: "Electronics category includes various electronic devices and gadgets.".to_string(),
+        metadata: metadata2,
+        embedding: Some(embedding2),
+        node_type: Some(EntityType::new("Category")),
+    }).await?;
     
-    // Demonstrate vector similarity search
-    println!("\nDemonstrating vector similarity search...");
+    // Demonstrate hybrid queries - manually combining graph and vector operations
+    println!("\nDemonstrating hybrid query capabilities:");
     
-    let query_embedding = vec![0.5, 0.6, 0.7, 0.8, 0.9]; // Similar to product node
-    let similar_nodes = hybrid_graph.find_similar_nodes(
-        query_embedding,
-        5,
-        None,
-    ).await?;
+    // 1. Graph query - get node by ID
+    let node1 = graph.get_node(node1_id).await?;
+    println!("\n1. Graph Query - Get node by ID:");
+    println!("   Node: {} ({})", node1.label, node1.id.0);
+    println!("   Properties: {}", serde_json::to_string_pretty(&node1.properties)?);
     
-    println!("Found {} similar nodes:", similar_nodes.len());
-    for node in &similar_nodes {
-        println!("- {} ({}): {:?}", node.node.label, node.node.id.0, node.embedding.as_ref().map(|e| e.len()));
+    // 2. Vector query - find similar content
+    let query_embedding = vec![0.15f32; 768]; // Dummy query embedding close to product
+    let similar_entries = memory.search_similar(query_embedding, 5, 0.0).await?;
+    
+    println!("\n2. Vector Query - Find similar content:");
+    for (i, entry) in similar_entries.iter().enumerate() {
+        println!("   Result {}: {} (score: {})", i+1, entry.content, entry.score.unwrap_or(0.0));
     }
     
-    // Demonstrate hybrid query
-    println!("\nDemonstrating hybrid query...");
+    // 3. Combined approach - use graph to find relationships then vector to find similar
+    println!("\n3. Combined Graph + Vector approach:");
     
-    let query = HybridQueryBuilder::new()
-        .start_from(person_id)
-        .with_embedding(vec![0.5, 0.6, 0.7, 0.8, 0.9])
-        .follow_outgoing(None) // Follow all outgoing edges
-        .limit(10)
-        .with_similarity_metric(SimilarityMetric::Cosine)
-        .include_graph_structure(true)
-        .build();
+    // First get relationships from graph
+    let connected_nodes = graph.get_connected_nodes(node1_id, None).await?;
+    println!("   Connected nodes to Product from graph: {}", connected_nodes.len());
     
-    let fusion_strategy = Box::new(WeightedFusion::balanced());
-    
-    let query_result = hybrid_graph.execute_hybrid_query(query, Some(fusion_strategy)).await?;
-    
-    println!("Hybrid query found {} nodes and {} edges in {}ms:",
-        query_result.nodes.len(),
-        query_result.edges.len(),
-        query_result.execution_time_ms
-    );
-    
-    for (i, scored_node) in query_result.nodes.iter().enumerate() {
-        println!("{}. {} (score: {:.4}): {:?}",
-            i + 1,
-            scored_node.node.node.label,
-            scored_node.score,
-            scored_node.path.as_ref().map(|p| p.depth)
-        );
-    }
-    
-    // Demonstrate temporal query
-    println!("\nDemonstrating temporal hybrid query...");
-    
-    let now = Utc::now();
-    let one_year_ago = now - chrono::Duration::days(365);
-    
-    let temporal_range = TemporalRange {
-        start: Some(Timestamp(one_year_ago)),
-        end: Some(Timestamp(now)),
-    };
-    
-    let temporal_results = hybrid_graph.get_knowledge_in_time_range(
-        temporal_range,
-        Some(vec![0.5, 0.6, 0.7, 0.8, 0.9]),
-        5,
-    ).await?;
-    
-    println!("Temporal query found {} nodes:", temporal_results.len());
-    for node in &temporal_results {
-        println!("- {}: {} ({})",
-            node.node.entity_type,
-            node.node.label,
-            node.node.valid_time.start
-                .map(|ts| ts.0.format("%Y-%m-%d").to_string())
-                .unwrap_or_else(|| "unknown".to_string())
-        );
-    }
-    
-    println!("\nHybrid vector+graph example completed successfully!");
-    
-    Ok(())
-}
-
-// Helper functions to create nodes and edges
-
-fn create_person_node(name: &str, age: u32, occupation: &str) -> Result<Node, Box<dyn std::error::Error>> {
-    let mut props = HashMap::new();
-    props.insert("name".to_string(), json!(name));
-    props.insert("age".to_string(), json!(age));
-    props.insert("occupation".to_string(), json!(occupation));
-    
-    let now = Utc::now();
-    
-    Ok(Node {
-        id: NodeId(Uuid::new_v4()),
-        entity_type: EntityType::Person,
-        label: name.to_string(),
-        properties: Properties(props),
-        valid_time: TemporalRange {
-            start: Some(Timestamp(now)),
-            end: None,
-        },
-        transaction_time: TemporalRange {
-            start: Some(Timestamp(now)),
-            end: None,
-        },
-    })
-}
-
-fn create_company_node(name: &str, industry: &str, location: &str) -> Result<Node, Box<dyn std::error::Error>> {
-    let mut props = HashMap::new();
-    props.insert("name".to_string(), json!(name));
-    props.insert("industry".to_string(), json!(industry));
-    props.insert("location".to_string(), json!(location));
-    
-    let now = Utc::now();
-    
-    Ok(Node {
-        id: NodeId(Uuid::new_v4()),
-        entity_type: EntityType::Organization,
-        label: name.to_string(),
-        properties: Properties(props),
-        valid_time: TemporalRange {
-            start: Some(Timestamp(now)),
-            end: None,
-        },
-        transaction_time: TemporalRange {
-            start: Some(Timestamp(now)),
-            end: None,
-        },
-    })
-}
-
-fn create_product_node(name: &str, category: &str, price: f64) -> Result<Node, Box<dyn std::error::Error>> {
-    let mut props = HashMap::new();
-    props.insert("name".to_string(), json!(name));
-    props.insert("category".to_string(), json!(category));
-    props.insert("price".to_string(), json!(price));
-    
-    let now = Utc::now();
-    
-    Ok(Node {
-        id: NodeId(Uuid::new_v4()),
-        entity_type: EntityType::Product,
-        label: name.to_string(),
-        properties: Properties(props),
-        valid_time: TemporalRange {
-            start: Some(Timestamp(now)),
-            end: None,
-        },
-        transaction_time: TemporalRange {
-            start: Some(Timestamp(now)),
-            end: None,
-        },
-    })
-}
-
-fn create_edge(
-    source_id: NodeId,
-    target_id: NodeId,
-    label: &str,
-    properties_json: serde_json::Value,
-) -> Result<Edge, Box<dyn std::error::Error>> {
-    let mut props = HashMap::new();
-    
-    if let serde_json::Value::Object(map) = properties_json {
-        for (key, value) in map {
-            props.insert(key, value);
+    for node in &connected_nodes {
+        println!("   - {} ({})", node.label, node.id.0);
+        
+        // For each connected node, find similar entries in vector store
+        if let Ok(Some(entry)) = memory.get(node.id.0.to_string()).await {
+            if let Some(embedding) = &entry.embedding {
+                let similar = memory.search_similar(embedding.clone(), 2, 0.0).await?;
+                println!("     Similar items in vector store:");
+                for sim in similar {
+                    println!("       * {} (score: {})", sim.content, sim.score.unwrap_or(0.0));
+                }
+            }
         }
     }
     
-    let now = Utc::now();
-    
-    Ok(Edge {
-        id: EdgeId(Uuid::new_v4()),
-        source_id,
-        target_id,
-        label: label.to_string(),
-        properties: Properties(props),
-        valid_time: TemporalRange {
-            start: Some(Timestamp(now)),
-            end: None,
-        },
-        transaction_time: TemporalRange {
-            start: Some(Timestamp(now)),
-            end: None,
-        },
-    })
+    println!("\nHybrid operations example completed successfully!");
+    Ok(())
 } 
