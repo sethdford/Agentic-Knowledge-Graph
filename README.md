@@ -268,9 +268,9 @@ Current benchmark results on standard hardware (M1 MacBook Pro):
 - [x] Query endpoints
 - [x] Batch operation support
 - [x] Error handling
-- [ ] Authentication integration
-- [ ] API documentation
-- [ ] Rate limiting
+- [x] Authentication integration
+- [x] API documentation
+- [x] Rate limiting
 
 ### RAG System Integration
 
@@ -429,4 +429,43 @@ Example request:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines. 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+## REST API
+
+The project includes a fully functional REST API built with Axum that provides:
+
+- Node and edge CRUD operations with bi-temporal support
+- Batch operations for creating multiple nodes/edges
+- Knowledge graph operations for storing and querying information
+- OpenAPI documentation with Swagger UI
+- Authentication and rate limiting
+- Health and version endpoints
+
+### API Endpoints
+
+- **Health endpoints**:
+  - `GET /health` - Get API health status
+  - `GET /version` - Get API version information
+
+- **Node endpoints**:
+  - `POST /nodes` - Create a new node
+  - `GET /nodes/:id` - Get a node by ID
+  - `PATCH /nodes/:id` - Update a node
+  - `DELETE /nodes/:id` - Delete a node
+  - `POST /nodes/batch` - Create multiple nodes in batch
+
+- **Edge endpoints**:
+  - `POST /edges` - Create a new edge
+  - `GET /edges/:id` - Get an edge by ID
+  - `PATCH /edges/:id` - Update an edge
+  - `DELETE /edges/:id` - Delete an edge
+  - `POST /edges/batch` - Create multiple edges in batch
+
+- **Knowledge graph endpoints**:
+  - `POST /knowledge/query` - Query information from the knowledge graph
+  - `POST /knowledge/store` - Store information in the knowledge graph
+
+### API Documentation
+
+The API documentation is available via Swagger UI at `/swagger-ui` when the server is running. 

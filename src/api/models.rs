@@ -1,18 +1,19 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 use crate::types::{Node, Edge, EntityId, Timestamp, TemporalRange, NodeId, EntityType, Properties, EdgeId};
 
 /// Request to store information in the graph
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct StoreRequest {
     /// Content to store
     pub content: String,
 }
 
 /// Request to query knowledge from the graph
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct QueryRequest {
     /// Query text
     pub query: String,
@@ -23,7 +24,7 @@ pub struct QueryRequest {
 }
 
 /// Response from a knowledge query
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct QueryResponse {
     /// Query results
     pub results: Vec<QueryResult>,
@@ -32,7 +33,7 @@ pub struct QueryResponse {
 }
 
 /// Single result from a knowledge query
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct QueryResult {
     /// Node ID
     pub id: Uuid,
@@ -45,35 +46,37 @@ pub struct QueryResult {
 }
 
 /// Request to create a new node
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateNodeRequest {
+    /// Entity type
+    pub entity_type: EntityType,
     /// Node label
     pub label: String,
     /// Node properties
     pub properties: Properties,
-    /// Node entity type
-    pub entity_type: EntityType,
-    /// Valid time range
+    /// Temporal validity range
+    #[schema(inline)]
     pub valid_time: Option<TemporalRange>,
 }
 
 /// Request to create a new edge
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateEdgeRequest {
     /// Source node ID
-    pub source_id: NodeId,
+    pub source_id: Uuid,
     /// Target node ID
-    pub target_id: NodeId,
+    pub target_id: Uuid,
     /// Edge label
     pub label: String,
     /// Edge properties
     pub properties: Properties,
-    /// Valid time range
+    /// Temporal validity range
+    #[schema(inline)]
     pub valid_time: Option<TemporalRange>,
 }
 
 /// Request to update a node
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateNodeRequest {
     /// Node label
     pub label: Option<String>,

@@ -1,232 +1,167 @@
+pub mod handlers;
+pub mod models;
+pub mod middleware;
+
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
+    middleware::from_fn_with_state,
+    routing::{get, post, patch, delete},
+    Router,
 };
-use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tower_http::trace::TraceLayer;
-use uuid::Uuid;
-use aws_config;
-use aws_sdk_dynamodb::Client as DynamoClient;
-use aws_sdk_neptune::Client as NeptuneClient;
-use opensearch::{
-    OpenSearch,
-    http::transport::{SingleNodeConnectionPool, Transport, TransportBuilder},
-    auth::Credentials,
-};
-use url::Url;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
-use crate::{
-    error::{Error, Result},
-    graph::neptune::NeptuneGraph,
-    memory::MemorySystem,
-    rag::{RAGSystem, RAG, RAGConfig},
-    temporal::{DynamoDBTemporal, Temporal, new_temporal_dynamodb},
-    types::{Node, Edge, EntityId, Timestamp, TemporalRange, NodeId, EntityType, Properties, EdgeId},
-    Context,
-    Config,
-    aws::dynamodb::DynamoDBClient,
-};
+use self::models::*;
+use self::handlers::*;
+use self::middleware::{auth, RateLimiter, rate_limit, request_logger};
 
-mod models;
-pub mod state;
-mod error;
-mod handlers;
-
-pub use models::*;
-pub use state::ApiState;
-pub use error::{ApiError, ApiResult};
-
-/// Request to store information in the graph
-#[derive(Debug, Clone, Deserialize)]
-pub struct StoreRequest {
-    /// Content to store
-    pub content: String,
-}
-
-/// Request to query knowledge from the graph
-#[derive(Debug, Clone, Deserialize)]
-pub struct QueryRequest {
-    /// Query text
-    pub query: String,
-    /// Optional timestamp to query at
-    pub timestamp: Option<DateTime<Utc>>,
-    /// Optional time window in seconds
-    pub time_window: Option<i64>,
-}
-
-/// Response from a knowledge query
-#[derive(Debug, Clone, Serialize)]
-pub struct QueryResponse {
-    /// Query results
-    pub results: Vec<QueryResult>,
-    /// Relevant context
-    pub context: Vec<String>,
-}
-
-/// Single result from a knowledge query
-#[derive(Debug, Clone, Serialize)]
-pub struct QueryResult {
-    /// Node ID
-    pub id: Uuid,
-    /// Content
-    pub content: String,
-    /// Confidence score
-    pub confidence: f64,
-    /// Timestamp
-    pub timestamp: DateTime<Utc>,
-}
-
-/// Create a new API router
-pub fn create_router(state: Arc<ApiState>) -> Router {
-    Router::new()
-        // Health and version endpoints
-        .route("/health", axum::routing::get(handlers::health_check))
-        .route("/version", axum::routing::get(handlers::version))
-        // Add state and middleware
-        .with_state(state)
-        .layer(TraceLayer::new_for_http())
-}
-
-/// Store information in the graph
-async fn store_information(
-    State(state): State<Arc<ApiState>>,
-    Json(request): Json<StoreRequest>,
-) -> impl IntoResponse {
-    match state.rag.process_text(&request.content).await {
-        Ok(_) => StatusCode::OK,
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    }
-}
-
-/// Query knowledge from the graph
-async fn query_knowledge(
-    State(state): State<Arc<ApiState>>,
-    Json(request): Json<QueryRequest>,
-) -> impl IntoResponse {
-    let timestamp = request.timestamp.unwrap_or_else(|| Utc::now());
-    let time_window = request.time_window.unwrap_or(3600); // Default 1 hour
+/// API error types
+#[derive(Debug, thiserror::Error)]
+pub enum ApiError {
+    #[error("Not found: {0}")]
+    NotFound(String),
     
-    // Get relevant context using RAG
-    let context = match state.rag.extract_entities(&request.query).await {
-        Ok(entities) => entities.into_iter().map(|e| e.text).collect(),
-        Err(_) => vec![],
-    };
+    #[error("Bad request: {0}")]
+    BadRequest(String),
     
-    // Get temporal nodes in range
-    let start_time = timestamp - Duration::seconds(time_window);
-    let mut results = Vec::new();
+    #[error("Internal error: {0}")]
+    Internal(String),
     
-    // Query each entity ID from the context
-    for entity_text in context.iter() {
-        // Create an entity ID for the query
-        let entity_id = EntityId::from(entity_text.clone());
-        
-        // Query the temporal store
-        if let Ok(temporal_results) = state.temporal.query_between(
-            &entity_id,
-            start_time,
-            timestamp,
-        ).await {
-            for result in temporal_results {
-                let node = result.data;
-                results.push(QueryResult {
-                    id: node.id.0,
-                    content: node.label,
-                    confidence: 1.0, // TODO: Implement proper confidence scoring
-                    timestamp: result.timestamp.0,
-                });
-            }
-        }
-    }
-        
-    (
-        StatusCode::OK,
-        Json(QueryResponse {
-            results,
-            context,
-        })
-    )
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
 }
 
-/// Get a specific node by ID
-async fn get_node(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
-    let entity_id = EntityId {
-        entity_type: EntityType::Node,
-        id,
-    };
-    
-    match state.temporal.query_latest(&entity_id).await {
-        Ok(Some(result)) => (StatusCode::OK, Json(result.data)),
-        Ok(None) => {
-            let error_node = Node {
-                id: NodeId(Uuid::new_v4()),
-                entity_type: EntityType::Node,
-                label: "Node not found".to_string(),
-                properties: Properties::new(),
-                valid_time: TemporalRange::from_now(),
-                transaction_time: TemporalRange::from_now(),
-            };
-            (StatusCode::NOT_FOUND, Json(error_node))
-        },
-        Err(_) => {
-            let error_node = Node {
-                id: NodeId(Uuid::new_v4()),
-                entity_type: EntityType::Node,
-                label: "Failed to get node".to_string(),
-                properties: Properties::new(),
-                valid_time: TemporalRange::from_now(),
-                transaction_time: TemporalRange::from_now(),
-            };
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(error_node))
-        }
-    }
+/// Result type for API operations
+pub type ApiResult<T> = Result<T, ApiError>;
+
+/// API state shared across handlers
+pub struct ApiState {
+    start_time: Instant,
+    // Add more state fields as needed
 }
 
 impl ApiState {
-    pub async fn new(config: Config) -> Result<Self> {
-        // Use the existing initialize method instead
-        Self::initialize(&config).await
+    /// Create a new API state
+    pub fn new() -> Self {
+        Self {
+            start_time: Instant::now(),
+        }
+    }
+    
+    /// Get API uptime
+    pub fn uptime(&self) -> Duration {
+        self.start_time.elapsed()
     }
 }
 
-pub struct GraphAPI {
-    temporal: Arc<DynamoDBTemporal<Node, aws_sdk_dynamodb::Client>>,
-    edge_temporal: Arc<DynamoDBTemporal<Edge, aws_sdk_dynamodb::Client>>,
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        handlers::health_check,
+        handlers::version,
+        handlers::create_node,
+        handlers::get_node,
+        handlers::update_node,
+        handlers::delete_node,
+        handlers::create_nodes_batch,
+        handlers::create_edge,
+        handlers::get_edge,
+        handlers::update_edge,
+        handlers::delete_edge,
+        handlers::create_edges_batch,
+        handlers::query_knowledge,
+        handlers::store_information,
+    ),
+    components(
+        schemas(
+            CreateNodeRequest, UpdateNodeRequest,
+            CreateEdgeRequest, UpdateEdgeRequest,
+            BatchCreateNodesRequest, BatchCreateEdgesRequest,
+            BatchOperationFailure, BatchOperationResponse, 
+            Node, Edge, NodeId, EdgeId, EntityId, Properties,
+            ComponentStatus, ComponentHealth, HealthCheckResponse, VersionInfo,
+            QueryRequest, QueryResult, QueryResponse, StoreRequest,
+            TemporalRange, Timestamp
+        )
+    ),
+    tags(
+        (name = "health", description = "Health and monitoring endpoints"),
+        (name = "nodes", description = "Node CRUD operations"),
+        (name = "edges", description = "Edge CRUD operations"),
+        (name = "knowledge", description = "Knowledge graph operations")
+    ),
+    info(
+        title = "Knowledge Graph API",
+        version = "1.0.0",
+        description = "REST API for a temporal knowledge graph with entity and relationship handling"
+    )
+)]
+pub struct ApiDoc;
+
+/// Request to store information in the graph
+#[derive(Debug, serde::Deserialize)]
+pub struct StoreRequest {
+    /// Text to process and store in the graph
+    pub text: String,
+    /// Optional context for entity extraction
+    pub context: Option<String>,
+    /// Optional metadata to attach to the stored information
+    pub metadata: Option<serde_json::Value>,
 }
 
-impl GraphAPI {
-    pub async fn new(config: &Config) -> Result<Self> {
-        let temporal = Arc::new(new_temporal_dynamodb(config).await?);
-        let edge_temporal = Arc::new(new_temporal_dynamodb(config).await?);
-
-        Ok(Self {
-            temporal,
-            edge_temporal,
-        })
-    }
-
-    pub async fn add_node(&self, node_id: NodeId, node: Node, valid_time: TemporalRange) -> Result<()> {
-        let entity_id = EntityId {
-            entity_type: EntityType::Node,
-            id: node_id.0.to_string(),
-        };
-        Temporal::store(&*self.temporal, entity_id, node, valid_time).await
-    }
-
-    pub async fn add_edge(&self, edge_id: EdgeId, edge: Edge, valid_time: TemporalRange) -> Result<()> {
-        let entity_id = EntityId {
-            entity_type: EntityType::Edge,
-            id: edge_id.0.to_string(),
-        };
-        Temporal::store(&*self.edge_temporal, entity_id, edge, valid_time).await
-    }
+/// Create router with all API routes
+pub fn create_router() -> Router {
+    let state = Arc::new(ApiState::new());
+    
+    // Create rate limiter
+    let rate_limiter = RateLimiter::new(100, Duration::from_secs(60));
+    
+    // API routes that require authentication
+    let authenticated_routes = Router::new()
+        // Node routes
+        .route("/nodes", post(handlers::create_node))
+        .route("/nodes/batch", post(handlers::create_nodes_batch))
+        .route("/nodes/:id", get(handlers::get_node)
+            .patch(handlers::update_node)
+            .delete(handlers::delete_node))
+        
+        // Edge routes
+        .route("/edges", post(handlers::create_edge))
+        .route("/edges/batch", post(handlers::create_edges_batch))
+        .route("/edges/:id", get(handlers::get_edge)
+            .patch(handlers::update_edge)
+            .delete(handlers::delete_edge))
+        
+        // Knowledge graph routes
+        .route("/knowledge/query", post(handlers::query_knowledge))
+        .route("/knowledge/store", post(handlers::store_information))
+        
+        // Apply authentication middleware
+        .route_layer(axum::middleware::from_fn(auth))
+        
+        // Apply rate limiting with state
+        .route_layer(from_fn_with_state(rate_limiter, rate_limit));
+    
+    // Public routes that don't require authentication
+    let public_routes = Router::new()
+        // Health routes
+        .route("/health", get(handlers::health_check))
+        .route("/version", get(handlers::version));
+    
+    // API documentation
+    let swagger_ui = SwaggerUi::new("/swagger-ui")
+        .url("/api-docs/openapi.json", ApiDoc::openapi());
+    
+    // Combine all routes and apply common middleware
+    Router::new()
+        .merge(authenticated_routes)
+        .merge(public_routes)
+        .merge(swagger_ui)
+        .layer(axum::middleware::from_fn(request_logger))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
 } 
