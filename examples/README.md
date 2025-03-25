@@ -77,6 +77,30 @@ cargo run --example hybrid_operations
 
 This example creates a small knowledge graph with vector embeddings attached to nodes and edges, then demonstrates how to perform vector similarity searches, hybrid queries, and temporal queries with vector similarity, showcasing the power of the hybrid approach.
 
+### 5. Memory Operations (New)
+
+Demonstrates how to work with the vector memory system:
+- Creating and storing memory entries
+- Retrieving entries by ID
+- Searching for similar entries using vector similarity
+
+**Run with:**
+```bash
+cargo run --example memory_operations
+```
+
+### 6. Hybrid Operations (New)
+
+Shows how to combine graph database and vector memory operations:
+- Creating nodes in the graph database
+- Storing the same entities with vector embeddings
+- Demonstrating hybrid queries using both graph traversal and vector similarity
+
+**Run with:**
+```bash
+cargo run --example hybrid_operations
+```
+
 ## End-to-End Tests
 
 In addition to these examples, you can find end-to-end tests in the `tests/` directory:
