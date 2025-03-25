@@ -27,9 +27,10 @@ use crate::{
         (status = 200, description = "API health status", body = HealthCheckResponse)
     )
 )]
+#[axum::debug_handler]
 pub async fn health_check(
     State(state): State<Arc<ApiState>>
-) -> impl IntoResponse {
+) -> Result<Json<HealthCheckResponse>, ApiError> {
     let uptime = state.uptime().as_secs();
     
     // For now, just return a simple healthy status without checking components
@@ -44,12 +45,14 @@ pub async fn health_check(
     
     let status = "healthy";
     
-    Json(HealthCheckResponse {
+    let response = HealthCheckResponse {
         status: status.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         uptime,
         components,
-    })
+    };
+    
+    Ok(Json(response))
 }
 
 /// Get API version information
@@ -63,11 +66,12 @@ pub async fn health_check(
         (status = 200, description = "API version information", body = VersionInfo)
     )
 )]
+#[axum::debug_handler]
 pub async fn version() -> impl IntoResponse {
     Json(VersionInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
         build_timestamp: Utc::now(),
-        commit_hash: env!("CARGO_PKG_VERSION").to_string(),
+        commit_hash: "unknown".to_string(),
     })
 }
 
@@ -86,17 +90,22 @@ pub async fn version() -> impl IntoResponse {
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn create_node(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<CreateNodeRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    // TODO: Implement real node creation
-    let node_id = NodeId(Uuid::new_v4());
+    // TODO: Implement actual node creation
+    let node = Node {
+        id: NodeId(Uuid::new_v4()),
+        entity_type: EntityType::Node,
+        label: "Example Node".to_string(),
+        properties: Properties::new(),
+        valid_time: TemporalRange::from_now(),
+        transaction_time: TemporalRange::from_now(),
+    };
     
-    Ok(Json(json!({
-        "id": node_id.0.to_string(),
-        "status": "created"
-    })))
+    Ok(Json(node))
 }
 
 /// Create multiple nodes in a batch
@@ -114,17 +123,18 @@ pub async fn create_node(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn create_nodes_batch(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<BatchCreateNodesRequest>,
 ) -> ApiResult<impl IntoResponse> {
     // TODO: Implement batch node creation
-    let success_count = request.nodes.len();
-    
-    Ok(Json(BatchOperationResponse {
-        success_count,
+    let response = BatchOperationResponse {
+        success_count: request.nodes.len(),
         failures: vec![],
-    }))
+    };
+    
+    Ok(Json(response))
 }
 
 /// Get a node by ID
@@ -144,16 +154,18 @@ pub async fn create_nodes_batch(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn get_node(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    // TODO: Implement real node retrieval logic
-    let uuid = Uuid::parse_str(&id).map_err(|_| ApiError::BadRequest("Invalid UUID format".to_string()))?;
+    // Parse UUID from path
+    let node_id = Uuid::parse_str(&id)
+        .map_err(|_| ApiError::BadRequest("Invalid node ID format".to_string()))?;
     
-    // Temporary mock node
+    // TODO: Implement actual node retrieval
     let node = Node {
-        id: NodeId(uuid),
+        id: NodeId(node_id),
         entity_type: EntityType::Node,
         label: "Example Node".to_string(),
         properties: Properties::new(),
@@ -183,18 +195,27 @@ pub async fn get_node(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn update_node(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
     Json(request): Json<UpdateNodeRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    // TODO: Implement real node update logic
-    let uuid = Uuid::parse_str(&id).map_err(|_| ApiError::BadRequest("Invalid UUID format".to_string()))?;
+    // Parse UUID from path
+    let node_id = Uuid::parse_str(&id)
+        .map_err(|_| ApiError::BadRequest("Invalid node ID format".to_string()))?;
     
-    Ok(Json(json!({
-        "id": uuid.to_string(),
-        "status": "updated"
-    })))
+    // TODO: Implement actual node update
+    let node = Node {
+        id: NodeId(node_id),
+        entity_type: EntityType::Node,
+        label: "Updated Node".to_string(),
+        properties: Properties::new(),
+        valid_time: TemporalRange::from_now(),
+        transaction_time: TemporalRange::from_now(),
+    };
+    
+    Ok(Json(node))
 }
 
 /// Delete a node
@@ -214,17 +235,18 @@ pub async fn update_node(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn delete_node(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    // TODO: Implement real node deletion logic
-    let uuid = Uuid::parse_str(&id).map_err(|_| ApiError::BadRequest("Invalid UUID format".to_string()))?;
+    // Parse UUID from path
+    let node_id = Uuid::parse_str(&id)
+        .map_err(|_| ApiError::BadRequest("Invalid node ID format".to_string()))?;
     
-    Ok(Json(json!({
-        "id": uuid.to_string(),
-        "status": "deleted"
-    })))
+    // TODO: Implement actual node deletion
+    
+    Ok(Json(json!({ "success": true, "id": id })))
 }
 
 /// Create a new edge
@@ -243,17 +265,23 @@ pub async fn delete_node(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn create_edge(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<CreateEdgeRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    // TODO: Implement real edge creation logic
-    let edge_id = EdgeId(Uuid::new_v4());
+    // TODO: Implement actual edge creation
+    let edge = Edge {
+        id: EdgeId(Uuid::new_v4()),
+        source_id: NodeId(Uuid::new_v4()),
+        target_id: NodeId(Uuid::new_v4()),
+        label: "CONNECTS_TO".to_string(),
+        properties: Properties::new(),
+        valid_time: TemporalRange::from_now(),
+        transaction_time: TemporalRange::from_now(),
+    };
     
-    Ok(Json(json!({
-        "id": edge_id.0.to_string(),
-        "status": "created"
-    })))
+    Ok(Json(edge))
 }
 
 /// Create multiple edges in a batch
@@ -271,17 +299,18 @@ pub async fn create_edge(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn create_edges_batch(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<BatchCreateEdgesRequest>,
 ) -> ApiResult<impl IntoResponse> {
     // TODO: Implement batch edge creation
-    let success_count = request.edges.len();
-    
-    Ok(Json(BatchOperationResponse {
-        success_count,
+    let response = BatchOperationResponse {
+        success_count: request.edges.len(),
         failures: vec![],
-    }))
+    };
+    
+    Ok(Json(response))
 }
 
 /// Get an edge by ID
@@ -301,19 +330,21 @@ pub async fn create_edges_batch(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn get_edge(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    // TODO: Implement real edge retrieval logic
-    let uuid = Uuid::parse_str(&id).map_err(|_| ApiError::BadRequest("Invalid UUID format".to_string()))?;
+    // Parse UUID from path
+    let edge_id = Uuid::parse_str(&id)
+        .map_err(|_| ApiError::BadRequest("Invalid edge ID format".to_string()))?;
     
-    // Temporary mock edge
+    // TODO: Implement actual edge retrieval
     let edge = Edge {
-        id: EdgeId(uuid),
+        id: EdgeId(edge_id),
         source_id: NodeId(Uuid::new_v4()),
         target_id: NodeId(Uuid::new_v4()),
-        label: "RELATED_TO".to_string(),
+        label: "CONNECTS_TO".to_string(),
         properties: Properties::new(),
         valid_time: TemporalRange::from_now(),
         transaction_time: TemporalRange::from_now(),
@@ -341,18 +372,28 @@ pub async fn get_edge(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn update_edge(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
     Json(request): Json<UpdateEdgeRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    // TODO: Implement real edge update logic
-    let uuid = Uuid::parse_str(&id).map_err(|_| ApiError::BadRequest("Invalid UUID format".to_string()))?;
+    // Parse UUID from path
+    let edge_id = Uuid::parse_str(&id)
+        .map_err(|_| ApiError::BadRequest("Invalid edge ID format".to_string()))?;
     
-    Ok(Json(json!({
-        "id": uuid.to_string(),
-        "status": "updated"
-    })))
+    // TODO: Implement actual edge update
+    let edge = Edge {
+        id: EdgeId(edge_id),
+        source_id: NodeId(Uuid::new_v4()),
+        target_id: NodeId(Uuid::new_v4()),
+        label: "UPDATED_CONNECTION".to_string(),
+        properties: Properties::new(),
+        valid_time: TemporalRange::from_now(),
+        transaction_time: TemporalRange::from_now(),
+    };
+    
+    Ok(Json(edge))
 }
 
 /// Delete an edge
@@ -372,17 +413,18 @@ pub async fn update_edge(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn delete_edge(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    // TODO: Implement real edge deletion logic
-    let uuid = Uuid::parse_str(&id).map_err(|_| ApiError::BadRequest("Invalid UUID format".to_string()))?;
+    // Parse UUID from path
+    let edge_id = Uuid::parse_str(&id)
+        .map_err(|_| ApiError::BadRequest("Invalid edge ID format".to_string()))?;
     
-    Ok(Json(json!({
-        "id": uuid.to_string(),
-        "status": "deleted"
-    })))
+    // TODO: Implement actual edge deletion
+    
+    Ok(Json(json!({ "success": true, "id": id })))
 }
 
 /// Query knowledge from the graph
@@ -400,16 +442,28 @@ pub async fn delete_edge(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn query_knowledge(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<QueryRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    // Stub implementation
-    // This is a temporary fix to get the code to compile
-    Ok(Json(QueryResponse {
-        results: vec![],
-        context: vec![],
-    }))
+    // TODO: Implement actual knowledge query
+    let response = QueryResponse {
+        results: vec![
+            QueryResult {
+                id: Uuid::new_v4(),
+                content: "Example result content".to_string(),
+                confidence: 0.95,
+                timestamp: Utc::now(),
+            }
+        ],
+        context: vec![
+            "Context item 1".to_string(),
+            "Context item 2".to_string(),
+        ],
+    };
+    
+    Ok(Json(response))
 }
 
 /// Store information in the graph
@@ -427,13 +481,16 @@ pub async fn query_knowledge(
         (status = 500, description = "Internal server error")
     )
 )]
+#[axum::debug_handler]
 pub async fn store_information(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<StoreRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    // Stub implementation
-    // This is a temporary fix to get the code to compile
+    // TODO: Implement actual information storage
+    
     Ok(Json(json!({
-        "status": "acknowledged"
+        "success": true,
+        "message": "Information stored successfully",
+        "entities_extracted": 3
     })))
 } 

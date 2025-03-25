@@ -36,7 +36,7 @@ ndarray = "0.15"
 log = "0.4"
 lru = "0.12"
 pin-project = "1.1"
-axum = { version = "0.6.20", features = ["headers", "macros"] }
+axum = { version = "0.7.4", features = ["macros"] }
 tower-http = { version = "0.5.1", features = ["trace", "auth", "limit"] }
 rust-bert = "0.22"
 tokenizers = "0.15"

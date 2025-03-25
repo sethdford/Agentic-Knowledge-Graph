@@ -1,34 +1,37 @@
 use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
     time::Duration,
     collections::HashMap,
     sync::{Arc, Mutex},
 };
 use axum::{
-    http::{Request, StatusCode},
-    middleware::Next,
+    extract::State,
+    http::{Request, StatusCode, HeaderMap},
     response::Response,
-    body::Body,
-    extract::FromRequestParts,
-    headers::{authorization::Bearer, Authorization},
-    TypedHeader,
+    middleware::Next,
 };
 
 /// Authentication middleware to validate bearer tokens
-pub async fn auth<B>(
-    TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
-    req: Request<B>,
-    next: Next<B>,
+pub async fn auth(
+    headers: HeaderMap,
+    req: Request<axum::body::Body>,
+    next: Next,
 ) -> Result<Response, StatusCode> {
-    // In a real implementation, this should validate tokens against a database or auth service
-    // For now, we'll just check against a hardcoded token for demonstration
-    if auth.token() != "secret-api-token" {
-        return Err(StatusCode::UNAUTHORIZED);
+    // Get the Authorization header
+    let auth_header = headers.get("Authorization")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| {
+            if value.starts_with("Bearer ") {
+                Some(value[7..].to_string())
+            } else {
+                None
+            }
+        });
+    
+    // Check if token exists and matches
+    match auth_header {
+        Some(token) if token == "secret-api-token" => Ok(next.run(req).await),
+        _ => Err(StatusCode::UNAUTHORIZED)
     }
-
-    Ok(next.run(req).await)
 }
 
 /// Simple rate limiter based on client IP
@@ -76,11 +79,11 @@ impl RateLimiter {
     }
 }
 
-/// Rate limiting middleware
+/// Rate limiting middleware with state
 pub async fn rate_limit(
-    req: Request<Body>,
-    next: Next<Body>,
-    limiter: RateLimiter,
+    State(limiter): State<RateLimiter>,
+    req: Request<axum::body::Body>,
+    next: Next,
 ) -> Result<Response, StatusCode> {
     // In a real implementation, get client IP from request
     // For demo purposes, we'll use a hardcoded value
@@ -94,7 +97,10 @@ pub async fn rate_limit(
 }
 
 /// Logging middleware
-pub async fn request_logger<B>(req: Request<B>, next: Next<B>) -> Response {
+pub async fn request_logger(
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
     let path = req.uri().path().to_owned();
     let method = req.method().clone();
     

@@ -8,7 +8,6 @@ use tower_http::trace::TraceLayer;
 use graph::{
     api,
     config::Config,
-    api::ApiState,
 };
 
 #[tokio::main]
@@ -23,11 +22,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load config for testing/local development
     let config = Config::for_testing();
 
-    // Create ApiState using initialize
-    let state = Arc::new(ApiState::initialize(&config).await?);
-
-    // Create router with just the health check endpoint
-    let app = api::create_router(state)
+    // Create router - the state is now created inside the function
+    let app = api::create_router()
         .layer(TraceLayer::new_for_http());
 
     // Start server

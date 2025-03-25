@@ -8,8 +8,12 @@ use crate::types::{Node, Edge, EntityId, Timestamp, TemporalRange, NodeId, Entit
 /// Request to store information in the graph
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct StoreRequest {
-    /// Content to store
-    pub content: String,
+    /// Text to process and store in the graph
+    pub text: String,
+    /// Optional context for entity extraction
+    pub context: Option<String>,
+    /// Optional metadata to attach to the stored information
+    pub metadata: Option<serde_json::Value>,
 }
 
 /// Request to query knowledge from the graph
@@ -87,7 +91,7 @@ pub struct UpdateNodeRequest {
 }
 
 /// Request to update an edge
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateEdgeRequest {
     /// Edge label
     pub label: Option<String>,
@@ -98,21 +102,21 @@ pub struct UpdateEdgeRequest {
 }
 
 /// Request for batch node creation
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct BatchCreateNodesRequest {
     /// List of nodes to create
     pub nodes: Vec<CreateNodeRequest>,
 }
 
 /// Request for batch edge creation
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct BatchCreateEdgesRequest {
     /// List of edges to create
     pub edges: Vec<CreateEdgeRequest>,
 }
 
 /// Response for batch operations
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct BatchOperationResponse {
     /// Number of successful operations
     pub success_count: usize,
@@ -121,7 +125,7 @@ pub struct BatchOperationResponse {
 }
 
 /// Error details for batch operations
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct BatchOperationError {
     /// Index of the failed operation
     pub index: usize,
@@ -130,7 +134,7 @@ pub struct BatchOperationError {
 }
 
 /// API version information
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct VersionInfo {
     /// API version
     pub version: String,
@@ -141,7 +145,7 @@ pub struct VersionInfo {
 }
 
 /// Health check response
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct HealthCheckResponse {
     /// Status of the service
     pub status: String,
@@ -154,7 +158,7 @@ pub struct HealthCheckResponse {
 }
 
 /// Health status of a system component
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ComponentHealth {
     /// Component name
     pub name: String,
@@ -164,9 +168,128 @@ pub struct ComponentHealth {
     pub details: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum ComponentStatus {
     Healthy,
     Degraded,
     Unhealthy,
+}
+
+// Implement custom schemas for imported types
+impl<'s> utoipa::ToSchema<'s> for TemporalRange {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "TemporalRange",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("Temporal validity range"))
+                    .build()
+            ))
+        )
+    }
+}
+
+impl<'s> utoipa::ToSchema<'s> for Timestamp {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "Timestamp",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("ISO 8601 / RFC 3339 date-time"))
+                    .build()
+            ))
+        )
+    }
+}
+
+// Implement custom schemas for remaining imported types
+impl<'s> utoipa::ToSchema<'s> for NodeId {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "NodeId",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("UUID identifier for a node"))
+                    .build()
+            ))
+        )
+    }
+}
+
+impl<'s> utoipa::ToSchema<'s> for EdgeId {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "EdgeId",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("UUID identifier for an edge"))
+                    .build()
+            ))
+        )
+    }
+}
+
+impl<'s> utoipa::ToSchema<'s> for EntityId {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "EntityId",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("Unique identifier for an entity"))
+                    .build()
+            ))
+        )
+    }
+}
+
+impl<'s> utoipa::ToSchema<'s> for Properties {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "Properties",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("Key-value properties for an entity"))
+                    .build()
+            ))
+        )
+    }
+}
+
+impl<'s> utoipa::ToSchema<'s> for Node {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "Node",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("Node in the graph"))
+                    .build()
+            ))
+        )
+    }
+}
+
+impl<'s> utoipa::ToSchema<'s> for Edge {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "Edge",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("Edge connecting two nodes in the graph"))
+                    .build()
+            ))
+        )
+    }
+}
+
+impl<'s> utoipa::ToSchema<'s> for EntityType {
+    fn schema() -> (&'s str, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>) {
+        (
+            "EntityType",
+            utoipa::openapi::RefOr::T(utoipa::openapi::schema::Schema::Object(
+                utoipa::openapi::schema::ObjectBuilder::new()
+                    .description(Some("Type of entity (Node, Edge, etc.)"))
+                    .build()
+            ))
+        )
+    }
 } 
